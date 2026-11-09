@@ -87,14 +87,13 @@ describe('v1 → v2 migration', () => {
 
   it('fills new settings with defaults', () => {
     expect(sanitizeSettings({ theme: 'dark', refraction: true, remindHour: 9 })).toEqual({
-      theme: 'dark',
       lang: 'system',
-      accent: 'mono',
-      surface: 'solid',
       remindHour: 9,
       defaultRemind: 1,
+      currency: 'USD',
       autoIcons: true,
       profileName: null,
+      onboarded: true,
     })
   })
 })

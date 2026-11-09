@@ -23,8 +23,9 @@ export async function requestNotifs(): Promise<NotifState> {
   return display === 'granted' ? 'granted' : display === 'denied' ? 'denied' : 'prompt'
 }
 
+/** Android needs a channel for importance and sound; iOS has no channels (the call would reject). */
 export async function ensureChannel(i18n: I18n): Promise<void> {
-  if (!isNative()) return
+  if (Capacitor.getPlatform() !== 'android') return
   await LocalNotifications.createChannel({
     id: CHANNEL,
     name: i18n.t('channelName'),

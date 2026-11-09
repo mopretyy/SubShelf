@@ -20,6 +20,7 @@ const sub = (over: Partial<Sub>): Sub => ({
   cycle: 'monthly',
   nextDate: '2026-10-01',
   remind: 1,
+  category: 'other',
   icon: { kind: 'monogram' },
   notes: null,
   archivedAt: null,

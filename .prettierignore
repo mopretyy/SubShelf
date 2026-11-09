@@ -1,5 +1,8 @@
 dist
 node_modules
 android
+ios
 assets
 package-lock.json
+# Temporary concept page, not part of the app.
+dyson.html

@@ -1,5 +1,7 @@
-name: Android APK
+name: Android release
 
+# main → signed APK (direct install, Pro via license keys) and signed AAB (Google Play),
+# both published as a GitHub release.
 on:
   push:
     branches: [main]
@@ -13,11 +15,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  apk:
+  release:
     runs-on: ubuntu-latest
     env:
-      VERSION_NAME: 0.1.${{ github.run_number }}
+      VERSION_NAME: 1.0.${{ github.run_number }}
       VERSION_CODE: ${{ github.run_number }}
+      VITE_RC_ANDROID_KEY: ${{ vars.RC_ANDROID_KEY }}
+      VITE_LICENSE_PUBKEY: ${{ vars.LICENSE_PUBKEY }}
+      VITE_BUY_URL: ${{ vars.BUY_URL }}
+      VITE_SUPPORT_EMAIL: ${{ vars.SUPPORT_EMAIL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -37,25 +43,33 @@ jobs:
       - name: Typecheck, tests, formatting
         run: npm run check
 
-      - name: Build web app
-        run: npm run build
-
-      - name: Sync Capacitor
-        run: npx cap sync android
-
-      - name: Generate app icons
-        run: npx capacitor-assets generate --android --iconBackgroundColor '#0a0a0a' --iconBackgroundColorDark '#0a0a0a' --splashBackgroundColor '#f5f5f5' --splashBackgroundColorDark '#0a0a0a'
-
       - name: Decode signing key
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
         run: |
           if [ -z "$KEYSTORE_B64" ]; then
-            echo "::error::Secret ANDROID_KEYSTORE_B64 is missing, release APK cannot be signed"
+            echo "::error::Secret ANDROID_KEYSTORE_B64 is missing, release builds cannot be signed"
             exit 1
           fi
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/subshelf.p12"
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/subshelf.p12" >> "$GITHUB_ENV"
+
+      - name: Warn about missing store settings
+        run: |
+          [ -n "$VITE_LICENSE_PUBKEY" ] || echo "::warning::Variable LICENSE_PUBKEY is not set: the APK cannot activate Pro keys"
+          [ -n "$VITE_RC_ANDROID_KEY" ] || echo "::warning::Variable RC_ANDROID_KEY is not set: the Google Play build cannot sell Pro"
+
+      # 1. Direct APK: installed from GitHub Releases, Pro is unlocked with a license key.
+      - name: Build web app (direct)
+        env:
+          VITE_STORE: direct
+        run: npm run build
+
+      - name: Sync Capacitor (direct)
+        run: npx cap sync android
+
+      - name: Generate app icons
+        run: npx capacitor-assets generate --android --iconBackgroundColor '#1e1e1e' --iconBackgroundColorDark '#1e1e1e' --splashBackgroundColor '#eaeaea' --splashBackgroundColorDark '#eaeaea'
 
       - name: Build signed APK
         working-directory: android
@@ -64,14 +78,31 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/SubShelf-$VERSION_NAME.apk"
 
-      - name: Collect APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk "SubShelf-$VERSION_NAME.apk"
+      # 2. Google Play AAB: same signing key, Pro is sold through Google Play Billing (RevenueCat).
+      - name: Build web app (play)
+        env:
+          VITE_STORE: play
+        run: npm run build
+
+      - name: Sync Capacitor (play)
+        run: npx cap sync android
+
+      - name: Build signed AAB
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          ./gradlew bundleRelease --no-daemon --stacktrace
+          cp app/build/outputs/bundle/release/app-release.aab "$GITHUB_WORKSPACE/SubShelf-$VERSION_NAME-play.aab"
 
       - uses: actions/upload-artifact@v4
         with:
           name: SubShelf-${{ env.VERSION_NAME }}
-          path: SubShelf-*.apk
+          path: |
+            SubShelf-*.apk
+            SubShelf-*.aab
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -79,8 +110,11 @@ jobs:
           tag_name: v${{ env.VERSION_NAME }}
           name: SubShelf ${{ env.VERSION_NAME }}
           target_commitish: ${{ github.sha }}
-          files: SubShelf-*.apk
+          files: |
+            SubShelf-*.apk
+            SubShelf-*.aab
           make_latest: true
           body: |
-            Скачайте `SubShelf-${{ env.VERSION_NAME }}.apk` на телефон и установите.
-            Обновление ставится поверх прошлой версии, данные сохраняются.
+            **`SubShelf-${{ env.VERSION_NAME }}.apk`** — для установки на телефон напрямую. Скачайте на Android и откройте. Обновление ставится поверх прошлой версии, данные сохраняются. Pro в этой версии включается ключом активации.
+
+            **`SubShelf-${{ env.VERSION_NAME }}-play.aab`** — для Google Play. На телефон его не ставят: загрузите файл в Google Play Console (Тестирование или Рабочая версия → Создать выпуск). Pro в этой сборке продаётся через Google Play.

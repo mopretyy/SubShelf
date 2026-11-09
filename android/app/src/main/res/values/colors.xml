@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light palette shared with the web app (src/styles). -->
+    <color name="app_background">#EAEAEA</color>
+    <color name="notification_accent">#FF3616</color>
+</resources>

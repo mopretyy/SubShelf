@@ -5,6 +5,22 @@ export type RemindDays = 0 | 1 | 3 | 7 | null
 
 export const REMIND_OPTIONS: RemindDays[] = [0, 1, 3, 7, null]
 
+export type Category =
+  'video' | 'music' | 'ai' | 'work' | 'cloud' | 'games' | 'learning' | 'social' | 'health' | 'other'
+
+export const CATEGORIES: Category[] = [
+  'video',
+  'music',
+  'ai',
+  'work',
+  'cloud',
+  'games',
+  'learning',
+  'social',
+  'health',
+  'other',
+]
+
 export interface SubIcon {
   kind: 'catalog' | 'remote' | 'monogram'
   /** Service domain used to fetch the icon. */
@@ -24,6 +40,7 @@ export interface Sub {
   /** trial: the day the trial ends (first charge). active: any known charge date, rolled forward. */
   nextDate: string | null
   remind: RemindDays
+  category: Category
   icon: SubIcon
   notes: string | null
   /** Set when the subscription was cancelled: from then on it lives in the history. */
@@ -152,10 +169,10 @@ export function monthlyByCurrency(subs: Sub[], filter: (s: Sub) => boolean): Map
   return out
 }
 
-/** The currency shown big: USD when present, otherwise the largest total. */
-export function mainCurrency(totals: Map<string, number>): string {
-  if (totals.has('USD')) return 'USD'
-  let best = 'USD'
+/** The currency shown big: the preferred one when present, otherwise the largest total. */
+export function mainCurrency(totals: Map<string, number>, preferred = 'USD'): string {
+  if (totals.has(preferred) || totals.size === 0) return preferred
+  let best = preferred
   let max = -1
   for (const [cur, v] of totals) {
     if (v > max) {

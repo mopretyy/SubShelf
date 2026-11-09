@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronRight, StickyNote } from 'lucide-react'
 import { searchCatalog, norm, type CatalogEntry } from '@/lib/catalog'
 import {
+  CATEGORIES,
   fmtDate,
   REMIND_OPTIONS,
+  type Category,
   type Cycle,
   type RemindDays,
   type Status,
@@ -12,6 +14,8 @@ import {
 } from '@/lib/dates'
 import { resolveIcon } from '@/lib/icons'
 import { useI18n, type Key } from '@/lib/i18n'
+import { haptic } from '@/lib/native'
+import { CURRENCIES } from '@/lib/store'
 import { cn } from '@/lib/cn'
 import { CalendarSheet } from './Calendar'
 import { Fit } from './Fit'
@@ -19,7 +23,6 @@ import { ServiceIcon } from './ServiceIcon'
 import { ChoiceSheet, Sheet } from './Sheet'
 import { Segmented, relWord } from './SubRow'
 
-const CURRENCIES = ['USD', 'EUR', 'MDL', 'RUB', 'UAH', 'RON', 'GBP', 'THB']
 const CYCLES: Cycle[] = ['weekly', 'monthly', 'yearly']
 
 export type SubFields = Omit<Sub, 'id' | 'createdAt' | 'archivedAt'>
@@ -32,6 +35,9 @@ interface Draft {
   cycle: Cycle
   nextDate: string | null
   remind: RemindDays
+  category: Category
+  /** The person picked the category by hand: the name no longer changes it. */
+  categoryPicked: boolean
   icon: SubIcon
   notes: string
 }
@@ -39,16 +45,23 @@ interface Draft {
 export const remindKey = (r: RemindDays, short = false): Key =>
   `${short ? 'remindShort' : 'remind'}${r === null ? 'Off' : r}` as Key
 
-function draftFrom(s: Sub | null, defaultRemind: RemindDays, restore: boolean): Draft {
+function draftFrom(
+  s: Sub | null,
+  defaultRemind: RemindDays,
+  currency: string,
+  restore: boolean,
+): Draft {
   if (!s) {
     return {
       name: '',
       status: 'trial',
       price: '',
-      currency: 'USD',
+      currency,
       cycle: 'monthly',
       nextDate: null,
       remind: defaultRemind,
+      category: 'other',
+      categoryPicked: false,
       icon: { kind: 'monogram' },
       notes: '',
     }
@@ -61,12 +74,14 @@ function draftFrom(s: Sub | null, defaultRemind: RemindDays, restore: boolean): 
     cycle: s.cycle,
     nextDate: restore ? null : s.nextDate,
     remind: s.remind,
+    category: s.category,
+    categoryPicked: true,
     icon: s.icon,
     notes: s.notes ?? '',
   }
 }
 
-type Picker = 'currency' | 'cycle' | 'remind' | 'date' | 'icon' | null
+type Picker = 'currency' | 'cycle' | 'remind' | 'date' | 'icon' | 'category' | null
 
 export function SubForm({
   open,
@@ -75,6 +90,7 @@ export function SubForm({
   today,
   online,
   defaultRemind,
+  defaultCurrency,
   onSave,
   onClose,
 }: {
@@ -84,12 +100,13 @@ export function SubForm({
   today: string
   online: boolean
   defaultRemind: RemindDays
+  defaultCurrency: string
   onSave: (fields: SubFields) => void
   onClose: () => void
 }) {
   const i18n = useI18n()
   const { t, locale } = i18n
-  const [d, setD] = useState<Draft>(() => draftFrom(sub, defaultRemind, restore))
+  const [d, setD] = useState<Draft>(() => draftFrom(sub, defaultRemind, defaultCurrency, restore))
   const [noteOpen, setNoteOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [picker, setPicker] = useState<Picker>(null)
@@ -100,13 +117,13 @@ export function SubForm({
 
   useEffect(() => {
     if (!open) return
-    setD(draftFrom(sub, defaultRemind, restore))
+    setD(draftFrom(sub, defaultRemind, defaultCurrency, restore))
     setNoteOpen(Boolean(sub?.notes))
     setError(null)
     setSuggest([])
     setSearching(false)
     setPicker(null)
-  }, [open, sub, defaultRemind, restore])
+  }, [open, sub, defaultRemind, defaultCurrency, restore])
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((p) => ({ ...p, [k]: v }))
 
@@ -120,9 +137,11 @@ export function SubForm({
     setSuggest(exact ? [] : hits)
     if (exact || hits.length === 1) {
       const c = exact ?? hits[0]
-      setD((p) =>
-        p.icon.domain === c.domain ? p : { ...p, icon: { kind: 'catalog', domain: c.domain } },
-      )
+      setD((p) => ({
+        ...p,
+        icon: p.icon.domain === c.domain ? p.icon : { kind: 'catalog', domain: c.domain },
+        category: p.categoryPicked ? p.category : c.category,
+      }))
       setSearching(false)
       return
     }
@@ -145,16 +164,29 @@ export function SubForm({
   }, [d.name, open, online])
 
   const pick = (c: CatalogEntry) => {
-    setD((p) => ({ ...p, name: c.name, icon: { kind: 'catalog', domain: c.domain } }))
+    haptic.select()
+    setD((p) => ({
+      ...p,
+      name: c.name,
+      icon: { kind: 'catalog', domain: c.domain },
+      category: p.categoryPicked ? p.category : c.category,
+    }))
     setSuggest([])
   }
 
   const submit = () => {
     const name = d.name.trim()
-    if (!name) return setError(t('errName'))
+    if (!name) {
+      haptic.warn()
+      return setError(t('errName'))
+    }
     const raw = d.price.trim().replace(',', '.')
     const price = raw === '' ? null : Number(raw)
-    if (price !== null && (!Number.isFinite(price) || price < 0)) return setError(t('errPrice'))
+    if (price !== null && (!Number.isFinite(price) || price < 0)) {
+      haptic.warn()
+      return setError(t('errPrice'))
+    }
+    haptic.success()
     onSave({
       name: name.slice(0, 80),
       status: d.status,
@@ -163,6 +195,7 @@ export function SubForm({
       cycle: d.cycle,
       nextDate: d.nextDate,
       remind: d.remind,
+      category: d.category,
       icon: d.icon,
       notes: d.notes.trim() ? d.notes.trim().slice(0, 500) : null,
     })
@@ -293,6 +326,11 @@ export function SubForm({
               values={[t(remindKey(d.remind)), t(remindKey(d.remind, true))]}
               onClick={() => setPicker('remind')}
             />
+            <FormRow
+              label={t('fCategory')}
+              values={[t(`cat${d.category}` as Key)]}
+              onClick={() => setPicker('category')}
+            />
           </div>
 
           <div className="group note-group">
@@ -337,6 +375,14 @@ export function SubForm({
         )}
         value={d.currency}
         onPick={(v) => set('currency', v)}
+        onClose={() => setPicker(null)}
+      />
+      <ChoiceSheet<Category>
+        open={picker === 'category'}
+        title={t('fCategory')}
+        options={CATEGORIES.map((c) => ({ value: c, label: t(`cat${c}` as Key) }))}
+        value={d.category}
+        onPick={(v) => setD((p) => ({ ...p, category: v, categoryPicked: true }))}
         onClose={() => setPicker(null)}
       />
       <ChoiceSheet
@@ -402,7 +448,7 @@ export function FormRow({
     <button type="button" className={cn('row row-form row-plain', className)} onClick={onClick}>
       <span className="t-body line none label-col">{label}</span>
       <Fit className="t-body c3 grow right" variants={values} />
-      <ChevronRight size={16} className="chev" />
+      <ChevronRight size={18} className="chev" />
     </button>
   )
 }

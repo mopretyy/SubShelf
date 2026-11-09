@@ -1,90 +1,124 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { List, Plus, User } from 'lucide-react'
+import { ChartColumn, List, Plus, User } from 'lucide-react'
 import { App as CapApp } from '@capacitor/app'
 import { StatusBar, Style } from '@capacitor/status-bar'
 import { popBack, useBack } from '@/lib/back'
+import { billing } from '@/lib/billing'
+import { CHANNEL, LICENSE_PUBKEY } from '@/lib/config'
 import { localYmd, nextCharge, type Sub } from '@/lib/dates'
 import { I18nContext, makeI18n, resolveLang } from '@/lib/i18n'
 import { withIconData } from '@/lib/icons'
+import { cleanKey, LICENSE_PREFIX, licenseActive, readLicense } from '@/lib/license'
+import { haptic, openUrl } from '@/lib/native'
 import { ensureChannel, isNative, notifState, requestNotifs, reschedule } from '@/lib/notify'
+import { canAdd, effectivePro, type Feature } from '@/lib/pro'
 import {
   defaultSettings,
+  emptyPro,
+  loadPro,
   loadSettings,
   loadSubs,
   nextId,
+  savePro,
   saveSettings,
   saveSubs,
+  type ProStore,
   type Settings as SettingsT,
+  type StoreEntitlement,
 } from '@/lib/store'
 import { cn } from '@/lib/cn'
 import { Detail } from '@/components/Detail'
+import { Fit } from '@/components/Fit'
 import { Home } from '@/components/Home'
+import { Insights } from '@/components/Insights'
+import { Onboarding } from '@/components/Onboarding'
+import { Paywall, type LicenseResult } from '@/components/Paywall'
 import { Profile } from '@/components/Profile'
-import { ACCENT_COLORS, Settings } from '@/components/Settings'
+import { Settings } from '@/components/Settings'
 import { ConfirmDialog, Sheet, Toast, type ConfirmState, type ToastState } from '@/components/Sheet'
 import { SubForm, type SubFields } from '@/components/SubForm'
 
-type Tab = 'subs' | 'profile'
-
-function useDark(theme: SettingsT['theme']): boolean {
-  const query = '(prefers-color-scheme: dark)'
-  const [systemDark, setSystemDark] = useState(() => window.matchMedia(query).matches)
-  useEffect(() => {
-    const mq = window.matchMedia(query)
-    const on = (e: MediaQueryListEvent) => setSystemDark(e.matches)
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [])
-  return theme === 'dark' || (theme === 'system' && systemDark)
-}
+type Tab = 'subs' | 'insights' | 'profile'
 
 export function App() {
   const [subs, setSubs] = useState<Sub[] | null>(null)
   const [settings, setSettings] = useState<SettingsT>(defaultSettings)
+  const [proStore, setProStore] = useState<ProStore>(emptyPro)
   const [today, setToday] = useState(() => localYmd())
   const [tab, setTab] = useState<Tab>('subs')
   const [page, setPage] = useState<'main' | 'settings'>('main')
   const [detailId, setDetailId] = useState<number | null>(null)
   const [form, setForm] = useState<{ sub: Sub | null; restore: boolean } | null>(null)
+  const [paywall, setPaywall] = useState<{ feature: Feature | null } | null>(null)
   const [confirm, setConfirm] = useState<ConfirmState | null>(null)
   const [toast, setToast] = useState<ToastState | null>(null)
   const [actions, setActions] = useState<Sub | null>(null)
   const [renaming, setRenaming] = useState(false)
+  const [onboarding, setOnboarding] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const i18n = useMemo(() => makeI18n(resolveLang(settings.lang)), [settings.lang])
   const { t } = i18n
-  const dark = useDark(settings.theme)
   const online = settings.autoIcons
+  const pro = useMemo(
+    () => effectivePro(proStore, CHANNEL, LICENSE_PUBKEY, today),
+    [proStore, today],
+  )
 
-  // Theme, accent, status bar.
+  // One light style: dark status bar icons on paper.
   useEffect(() => {
-    const root = document.documentElement
-    root.classList.toggle('dark', dark)
-    root.lang = i18n.lang
-    root.style.setProperty('--accent', ACCENT_COLORS[settings.accent][dark ? 'dark' : 'light'])
-    root.style.setProperty(
-      '--on-accent',
-      settings.accent === 'mono' ? (dark ? '#000000' : '#ffffff') : '#ffffff',
-    )
+    document.documentElement.lang = i18n.lang
     if (isNative()) {
-      void StatusBar.setStyle({ style: dark ? Style.Dark : Style.Light }).catch(() => {})
-      void StatusBar.setBackgroundColor({ color: dark ? '#000000' : '#f2f2f2' }).catch(() => {})
+      void StatusBar.setStyle({ style: Style.Light }).catch(() => {})
+      void StatusBar.setBackgroundColor({ color: '#eaeaea' }).catch(() => {})
     }
-  }, [dark, i18n.lang, settings.accent])
+  }, [i18n.lang])
 
-  // Initial load (migrates v1 data on first run).
+  const notify = useCallback((text: string, action?: ToastState['action']) => {
+    setToast({ id: Date.now(), text, action })
+  }, [])
+  const clearToast = useCallback(() => setToast(null), [])
+
+  const updatePro = useCallback((fn: (p: ProStore) => ProStore) => {
+    setProStore((prev) => {
+      const next = fn(prev)
+      savePro(next).catch((err: unknown) => console.error(err))
+      return next
+    })
+  }, [])
+
+  const onStore = useCallback(
+    (e: StoreEntitlement | null) => updatePro((p) => ({ ...p, store: e })),
+    [updatePro],
+  )
+
+  // Initial load. People who had data before Pro existed keep everything for free.
   useEffect(() => {
-    void Promise.all([loadSubs(), loadSettings()])
-      .then(([list, s]) => {
+    void Promise.all([loadSubs(), loadSettings(), loadPro()])
+      .then(([list, s, p]) => {
+        let proState = p ?? emptyPro
+        if (p === null) {
+          proState = { ...emptyPro, founder: isNative() && list.length > 0 }
+          void savePro(proState)
+        }
         setSettings(s)
+        setProStore(proState)
         setSubs(list)
+        if (!s.onboarded && list.length === 0) setOnboarding(true)
       })
       .catch((err: unknown) => {
         console.error(err)
         setSubs([])
       })
   }, [])
+
+  // Store billing: the SDK knows the truth, our copy only covers the first frames and offline starts.
+  useEffect(() => {
+    if (billing.kind !== 'store') return
+    void billing.init(onStore).then((e) => {
+      if (e !== undefined) onStore(e)
+    })
+  }, [onStore])
 
   // Reminders follow the list, debounced so typing and quick edits do not hammer the bridge.
   useEffect(() => {
@@ -96,11 +130,6 @@ export function App() {
     }, 500)
     return () => window.clearTimeout(tm)
   }, [subs, i18n, settings.remindHour])
-
-  const notify = useCallback((text: string, action?: ToastState['action']) => {
-    setToast({ id: Date.now(), text, action })
-  }, [])
-  const clearToast = useCallback(() => setToast(null), [])
 
   const commit = useCallback(
     (next: Sub[]) => {
@@ -120,7 +149,7 @@ export function App() {
     saveSettings(s).catch((err: unknown) => console.error(err))
   }
 
-  // Android: refresh "today" on resume; the back button closes the top layer first.
+  // Refresh "today" on resume; the Android back button closes the top layer first.
   useEffect(() => {
     const resume = CapApp.addListener('resume', () => setToday(localYmd()))
     const back = CapApp.addListener('backButton', () => {
@@ -131,7 +160,7 @@ export function App() {
       void back.then((h) => h.remove())
     }
   }, [])
-  useBack(tab === 'profile', () => setTab('subs'))
+  useBack(tab !== 'subs', () => setTab('subs'))
   useBack(tab === 'profile' && page === 'settings', () => setPage('main'))
 
   const items = useMemo(
@@ -151,6 +180,18 @@ export function App() {
   )
 
   const detail = subs?.find((s) => s.id === detailId) ?? null
+
+  const openPaywall = useCallback((feature: Feature | null = null) => {
+    haptic.tap()
+    setPaywall({ feature })
+  }, [])
+
+  /** New subscription, unless the free plan is full. */
+  const openAdd = () => {
+    if (!canAdd(subsRef.current, pro)) return openPaywall('limit')
+    haptic.tap()
+    setForm({ sub: null, restore: false })
+  }
 
   /** Cache the icon image right after saving, so the list works offline and never refetches. */
   const cacheIcon = useCallback(
@@ -224,32 +265,89 @@ export function App() {
     setTimeout(() => setForm({ sub, restore: false }), 120)
   }
 
-  const accentOn = settings.accent !== 'mono'
+  const restoreFromHistory = (sub: Sub) => {
+    if (!canAdd(subsRef.current, pro)) return openPaywall('limit')
+    setForm({ sub, restore: true })
+  }
+
+  const manage = () => {
+    void billing.manageUrl().then((url) => {
+      if (url) void openUrl(url)
+    })
+  }
+
+  const activateLicense = (raw: string): LicenseResult => {
+    const l = readLicense(raw, LICENSE_PUBKEY)
+    if (!l) return { ok: false, expired: null }
+    if (!licenseActive(l, today)) return { ok: false, expired: l.until }
+    updatePro((p) => ({ ...p, license: LICENSE_PREFIX + cleanKey(raw) }))
+    return { ok: true }
+  }
+
+  const finishOnboarding = () => {
+    setOnboarding(false)
+    updateSettings({ ...settings, onboarded: true })
+    // One gentle look at Pro after the welcome; a single tap closes it.
+    if (!pro.active) setTimeout(() => setPaywall({ feature: null }), 450)
+  }
+
+  const goTab = (next: Tab) => {
+    if (next === tab) {
+      scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+      if (next === 'profile') setPage('main')
+      return
+    }
+    haptic.select()
+    setTab(next)
+    setPage('main')
+    scrollRef.current?.scrollTo({ top: 0 })
+  }
+
+  const tabs: { id: Tab; icon: typeof List; label: string[] }[] = [
+    { id: 'subs', icon: List, label: [t('subs'), t('subsShort')] },
+    { id: 'insights', icon: ChartColumn, label: [t('insights')] },
+    { id: 'profile', icon: User, label: [t('profile')] },
+  ]
 
   return (
     <I18nContext.Provider value={i18n}>
-      <div className={cn('shell', settings.surface === 'glass' && 'glass-bar')}>
+      <div className="shell">
         <div ref={scrollRef} className="scroll">
-          <div className="content">
+          <div className="content" key={`${tab}-${page}`}>
             {tab === 'subs' ? (
               <Home
                 items={items}
                 loading={subs === null}
                 today={today}
                 online={online}
-                accent={accentOn}
-                onAdd={() => setForm({ sub: null, restore: false })}
+                pro={pro}
+                currency={settings.currency}
+                onAdd={openAdd}
                 onOpen={(s) => setDetailId(s.id)}
                 onLongPress={setActions}
+                onPro={() => openPaywall('limit')}
+              />
+            ) : tab === 'insights' ? (
+              <Insights
+                subs={subs ?? []}
+                today={today}
+                online={online}
+                pro={pro}
+                currency={settings.currency}
+                onPro={() => openPaywall('insights')}
+                onOpen={(s) => setDetailId(s.id)}
               />
             ) : page === 'settings' ? (
               <Settings
                 settings={settings}
-                dark={dark}
                 subs={subs ?? []}
+                pro={pro}
                 onChange={updateSettings}
                 onImport={commit}
                 onBack={() => setPage('main')}
+                onPro={(f) => openPaywall(f ?? null)}
+                onStore={onStore}
+                onManage={manage}
                 notify={notify}
                 confirm={(text, onYes) =>
                   setConfirm({ title: t('importFile'), body: text, yes: t('done'), onYes })
@@ -260,9 +358,14 @@ export function App() {
                 subs={subs ?? []}
                 name={settings.profileName}
                 online={online}
+                today={today}
+                pro={pro}
+                currency={settings.currency}
                 onRename={() => setRenaming(true)}
-                onRestore={(s) => setForm({ sub: s, restore: true })}
+                onRestore={restoreFromHistory}
                 onOpenSettings={() => setPage('settings')}
+                onPro={() => openPaywall()}
+                onManage={manage}
               />
             )}
           </div>
@@ -270,37 +373,20 @@ export function App() {
 
         <nav className="tabbar" aria-label={t('subs')}>
           <div className="tabs">
-            <button
-              type="button"
-              className={cn('tab', tab === 'subs' && 'is-on')}
-              aria-current={tab === 'subs' ? 'page' : undefined}
-              onClick={() => {
-                if (tab === 'subs') scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
-                setTab('subs')
-              }}
-            >
-              <List size={22} strokeWidth={1.9} />
-              <span className="t-cap line">{t('subs')}</span>
-            </button>
-            <button
-              type="button"
-              className={cn('tab', tab === 'profile' && 'is-on')}
-              aria-current={tab === 'profile' ? 'page' : undefined}
-              onClick={() => {
-                setTab('profile')
-                setPage('main')
-              }}
-            >
-              <User size={22} strokeWidth={1.9} />
-              <span className="t-cap line">{t('profile')}</span>
-            </button>
+            {tabs.map(({ id, icon: Icon, label }) => (
+              <button
+                key={id}
+                type="button"
+                className={cn('tab', tab === id && 'is-on')}
+                aria-current={tab === id ? 'page' : undefined}
+                onClick={() => goTab(id)}
+              >
+                <Icon size={21} strokeWidth={tab === id ? 2.1 : 1.8} />
+                <Fit className="t-tab" variants={label} />
+              </button>
+            ))}
           </div>
-          <button
-            type="button"
-            className="fab"
-            aria-label={t('add')}
-            onClick={() => setForm({ sub: null, restore: false })}
-          >
+          <button type="button" className="fab" aria-label={t('add')} onClick={openAdd}>
             <Plus size={26} strokeWidth={2} />
           </button>
         </nav>
@@ -323,8 +409,20 @@ export function App() {
           today={today}
           online={online}
           defaultRemind={settings.defaultRemind}
+          defaultCurrency={settings.currency}
           onSave={(f) => void saveForm(f)}
           onClose={() => setForm(null)}
+        />
+
+        <Paywall
+          open={paywall !== null}
+          feature={paywall?.feature ?? null}
+          pro={pro}
+          onClose={() => setPaywall(null)}
+          onStore={onStore}
+          onDemo={() => updatePro((p) => ({ ...p, demo: true }))}
+          onLicense={activateLicense}
+          notify={notify}
         />
 
         <Sheet open={actions !== null} onClose={() => setActions(null)} label={actions?.name ?? ''}>
@@ -369,6 +467,7 @@ export function App() {
 
         <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} noLabel={t('notNow')} />
         <Toast toast={toast} onDone={clearToast} />
+        {onboarding ? <Onboarding online={online} today={today} onDone={finishOnboarding} /> : null}
       </div>
     </I18nContext.Provider>
   )

@@ -2,6 +2,7 @@ import { memo, useLayoutEffect, useRef, useState } from 'react'
 import { daysUntil, fmtDate, fmtMoney, type Next, type Sub } from '@/lib/dates'
 import { useI18n, type I18n } from '@/lib/i18n'
 import { cn } from '@/lib/cn'
+import { haptic } from '@/lib/native'
 import { Fit } from './Fit'
 import { ServiceIcon } from './ServiceIcon'
 
@@ -25,7 +26,10 @@ export function Segmented<T extends string>({
           role="radio"
           aria-checked={o.value === value}
           className={cn('line', o.value === value && 'is-on')}
-          onClick={() => onChange(o.value)}
+          onClick={() => {
+            if (o.value !== value) haptic.select()
+            onChange(o.value)
+          }}
         >
           {o.label}
         </button>
@@ -73,7 +77,6 @@ export const SubRow = memo(function SubRow({
   next,
   today,
   online,
-  accent,
   onOpen,
   onLongPress,
 }: {
@@ -81,7 +84,6 @@ export const SubRow = memo(function SubRow({
   next: Next | null
   today: string
   online: boolean
-  accent: boolean
   onOpen: (s: Sub) => void
   onLongPress: (s: Sub) => void
 }) {
@@ -115,6 +117,7 @@ export const SubRow = memo(function SubRow({
     longFired.current = false
     timer.current = window.setTimeout(() => {
       longFired.current = true
+      haptic.tap()
       onLongPress(sub)
     }, 480)
   }
@@ -137,20 +140,14 @@ export const SubRow = memo(function SubRow({
       onPointerCancel={stop}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <ServiceIcon name={sub.name} icon={sub.icon} size={40} online={online} />
+      <ServiceIcon name={sub.name} icon={sub.icon} size={42} online={online} />
       <span className="col grow">
         <span ref={nameRef} className="t-head line">
           {sub.name}
         </span>
         <Fit className="t-sub c2" variants={priceVariants(sub, i18n)} />
       </span>
-      <span
-        className={cn(
-          'pill t-cap',
-          `pill-${pill.kind}`,
-          accent && pill.kind === 'solid' && 'pill-accent',
-        )}
-      >
+      <span className={cn('pill', `pill-${pill.kind}`)}>
         {pill.v[Math.min(idx, pill.v.length - 1)]}
       </span>
     </button>

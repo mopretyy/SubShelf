@@ -1,9 +1,11 @@
 import { Preferences } from '@capacitor/preferences'
 import { matchCatalog } from './catalog'
 import {
+  CATEGORIES,
   isValidYmd,
   localYmd,
   REMIND_OPTIONS,
+  type Category,
   type Cycle,
   type RemindDays,
   type Sub,
@@ -14,38 +16,96 @@ const SUBS_KEY = 'subshelf.subs.v2'
 const SETTINGS_KEY = 'subshelf.settings.v2'
 const SUBS_KEY_V1 = 'subshelf.subs.v1'
 const SETTINGS_KEY_V1 = 'subshelf.settings.v1'
+const PRO_KEY = 'subshelf.pro.v1'
 
-export type ThemePref = 'system' | 'light' | 'dark'
 export type LangPref = 'system' | 'ru' | 'en'
-export type Accent = 'mono' | 'blue' | 'cyan' | 'purple' | 'green' | 'orange' | 'pink'
-export type Surface = 'solid' | 'glass'
 
 export interface Settings {
-  theme: ThemePref
   lang: LangPref
-  accent: Accent
-  /** 'glass' makes only the bottom bar translucent. Default solid: no blur anywhere. */
-  surface: Surface
   /** Local hour for reminder notifications. */
   remindHour: number
   /** Reminder preset for new subscriptions. */
   defaultRemind: RemindDays
+  /** Currency for new subscriptions and for the big totals. */
+  currency: string
   /** Look up service icons online by name (only the name leaves the phone). */
   autoIcons: boolean
   profileName: string | null
+  /** The welcome screens were shown. */
+  onboarded: boolean
 }
 
-export const ACCENTS: Accent[] = ['mono', 'blue', 'cyan', 'purple', 'green', 'orange', 'pink']
+export const CURRENCIES = [
+  'USD',
+  'EUR',
+  'GBP',
+  'RUB',
+  'UAH',
+  'MDL',
+  'RON',
+  'KZT',
+  'BYN',
+  'PLN',
+  'TRY',
+  'GEL',
+  'AMD',
+  'AZN',
+  'UZS',
+  'THB',
+  'JPY',
+  'CNY',
+  'INR',
+  'BRL',
+  'CAD',
+  'AUD',
+  'CHF',
+  'ILS',
+  'AED',
+]
+
+const EURO = 'AT BE CY DE EE ES FI FR GR HR IE IT LT LU LV MT NL PT SI SK'.split(' ')
+const BY_REGION: Record<string, string> = {
+  US: 'USD',
+  GB: 'GBP',
+  RU: 'RUB',
+  UA: 'UAH',
+  MD: 'MDL',
+  RO: 'RON',
+  KZ: 'KZT',
+  BY: 'BYN',
+  PL: 'PLN',
+  TR: 'TRY',
+  GE: 'GEL',
+  AM: 'AMD',
+  AZ: 'AZN',
+  UZ: 'UZS',
+  TH: 'THB',
+  JP: 'JPY',
+  CN: 'CNY',
+  IN: 'INR',
+  BR: 'BRL',
+  CA: 'CAD',
+  AU: 'AUD',
+  CH: 'CHF',
+  IL: 'ILS',
+  AE: 'AED',
+}
+
+/** Currency of the device region ("ru-MD" → MDL), USD when the region is unknown. */
+export function guessCurrency(locale = typeof navigator !== 'undefined' ? navigator.language : '') {
+  const region = /[-_]([A-Za-z]{2})\b/.exec(locale)?.[1]?.toUpperCase() ?? ''
+  if (EURO.includes(region)) return 'EUR'
+  return BY_REGION[region] ?? 'USD'
+}
 
 export const defaultSettings: Settings = {
-  theme: 'system',
   lang: 'system',
-  accent: 'mono',
-  surface: 'solid',
   remindHour: 10,
   defaultRemind: 1,
+  currency: guessCurrency(),
   autoIcons: true,
   profileName: null,
+  onboarded: false,
 }
 
 const CYCLES: Cycle[] = ['weekly', 'monthly', 'yearly']
@@ -93,6 +153,9 @@ export function sanitizeSub(raw: unknown, fallbackId: number, today = localYmd()
 
   const remind: RemindDays =
     'remind' in r && REMIND_OPTIONS.includes(r.remind as RemindDays) ? (r.remind as RemindDays) : 1
+  const category: Category = CATEGORIES.includes(r.category as Category)
+    ? (r.category as Category)
+    : (matchCatalog(name)?.category ?? 'other')
 
   return {
     id: Number.isInteger(r.id) && (r.id as number) > 0 ? (r.id as number) : fallbackId,
@@ -103,6 +166,7 @@ export function sanitizeSub(raw: unknown, fallbackId: number, today = localYmd()
     cycle: CYCLES.includes(r.cycle as Cycle) ? (r.cycle as Cycle) : 'monthly',
     nextDate: date(r.nextDate) ?? date(r.chargeDate),
     remind,
+    category,
     icon: sanitizeIcon(r.icon, name),
     notes: notes ? notes.slice(0, 600) : null,
     archivedAt,
@@ -131,11 +195,9 @@ export function sanitizeSettings(raw: unknown): Settings {
   const s = raw as Record<string, unknown>
   const pick = <T>(v: unknown, allowed: readonly T[], fallback: T): T =>
     allowed.includes(v as T) ? (v as T) : fallback
+  const currency = typeof s.currency === 'string' ? s.currency.toUpperCase() : ''
   return {
-    theme: pick(s.theme, ['system', 'light', 'dark'] as const, 'system'),
     lang: pick(s.lang, ['system', 'ru', 'en'] as const, 'system'),
-    accent: pick(s.accent, ACCENTS, 'mono'),
-    surface: pick(s.surface, ['solid', 'glass'] as const, 'solid'),
     remindHour:
       Number.isInteger(s.remindHour) &&
       (s.remindHour as number) >= 0 &&
@@ -143,11 +205,14 @@ export function sanitizeSettings(raw: unknown): Settings {
         ? (s.remindHour as number)
         : 10,
     defaultRemind: 'defaultRemind' in s ? pick(s.defaultRemind, REMIND_OPTIONS, 1) : 1,
+    currency: /^[A-Z]{3}$/.test(currency) ? currency : defaultSettings.currency,
     autoIcons: typeof s.autoIcons === 'boolean' ? s.autoIcons : true,
     profileName:
       typeof s.profileName === 'string' && s.profileName.trim()
         ? s.profileName.trim().slice(0, 40)
         : null,
+    // Settings saved by an older version mean the person has used the app already.
+    onboarded: typeof s.onboarded === 'boolean' ? s.onboarded : true,
   }
 }
 
@@ -209,4 +274,83 @@ export function importJson(text: string): Sub[] {
   const subs = sanitizeList(list)
   if (subs.length === 0) throw new Error('empty backup')
   return subs
+}
+
+/** CSV for spreadsheets (Excel, Numbers, Google Sheets). Semicolons keep commas in prices safe. */
+export function exportCsv(subs: Sub[]): string {
+  const cell = (v: string | number | null) => {
+    const t = v === null ? '' : String(v)
+    return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t
+  }
+  const head = [
+    'name',
+    'status',
+    'price',
+    'currency',
+    'cycle',
+    'next_date',
+    'category',
+    'archived_at',
+    'notes',
+  ]
+  const rows = subs.map((s) =>
+    [s.name, s.status, s.price, s.currency, s.cycle, s.nextDate, s.category, s.archivedAt, s.notes]
+      .map(cell)
+      .join(';'),
+  )
+  return '\ufeff' + [head.join(';'), ...rows].join('\r\n')
+}
+
+/** What Pro rests on. Store state is a cache of the last answer from RevenueCat. */
+export interface ProStore {
+  /** Had data before Pro existed: keeps everything for free. */
+  founder: boolean
+  /** Direct APK license key as typed. */
+  license: string | null
+  /** Simulated purchase in the browser preview. */
+  demo: boolean
+  store: StoreEntitlement | null
+}
+
+export type PlanId = 'monthly' | 'yearly' | 'lifetime'
+
+export interface StoreEntitlement {
+  plan: PlanId | null
+  /** Expiration day (YYYY-MM-DD); null for lifetime. */
+  until: string | null
+  willRenew: boolean
+  trial: boolean
+}
+
+export const emptyPro: ProStore = { founder: false, license: null, demo: false, store: null }
+
+export function sanitizePro(raw: unknown): ProStore {
+  if (!raw || typeof raw !== 'object') return emptyPro
+  const r = raw as Record<string, unknown>
+  const st = r.store && typeof r.store === 'object' ? (r.store as Record<string, unknown>) : null
+  return {
+    founder: r.founder === true,
+    license: typeof r.license === 'string' && r.license ? r.license.slice(0, 200) : null,
+    demo: r.demo === true,
+    store: st
+      ? {
+          plan: (['monthly', 'yearly', 'lifetime'] as const).includes(st.plan as PlanId)
+            ? (st.plan as PlanId)
+            : null,
+          until: isValidYmd(st.until) ? st.until : null,
+          willRenew: st.willRenew === true,
+          trial: st.trial === true,
+        }
+      : null,
+  }
+}
+
+/** null when Pro was never saved: the first launch of this version. */
+export async function loadPro(): Promise<ProStore | null> {
+  const raw = await readJson(PRO_KEY)
+  return raw === undefined ? null : sanitizePro(raw)
+}
+
+export async function savePro(p: ProStore): Promise<void> {
+  await Preferences.set({ key: PRO_KEY, value: JSON.stringify(p) })
 }
