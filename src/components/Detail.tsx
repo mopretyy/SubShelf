@@ -1,6 +1,8 @@
-import { Ban, Pencil } from 'lucide-react'
+import { ArrowUpRight, Ban, Pencil } from 'lucide-react'
+import { manageLink } from '@/lib/catalog'
 import { fmtDate, fmtMoney, monthlyCost, type Next, type Sub } from '@/lib/dates'
 import { useI18n, type Key } from '@/lib/i18n'
+import { haptic, openUrl } from '@/lib/native'
 import { Fit } from './Fit'
 import { ServiceIcon } from './ServiceIcon'
 import { Sheet } from './Sheet'
@@ -71,6 +73,7 @@ export function Detail({
               <p className="t-body multi note-text">{sub.notes}</p>
             </div>
           ) : null}
+          <SiteButton sub={sub} />
           <div className="btn-row">
             <button type="button" className="btn btn-second grow" onClick={() => onEdit(sub)}>
               <Pencil size={18} /> <span className="line">{t('edit')}</span>
@@ -85,6 +88,38 @@ export function Detail({
         </div>
       ) : null}
     </Sheet>
+  )
+}
+
+/** The page where the plan is managed (known services) or the service's own site. */
+function SiteButton({ sub }: { sub: Sub }) {
+  const { t } = useI18n()
+  const domain = sub.icon.kind !== 'monogram' ? sub.icon.domain : undefined
+  const manage = manageLink(sub.name, domain)
+  const url = sub.url ?? manage ?? (domain ? `https://${domain}` : null)
+  if (!url) return null
+  const label = !sub.url && manage ? t('manageOnSite') : t('openSite')
+  let host = ''
+  try {
+    host = new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return null
+  }
+  return (
+    <button
+      type="button"
+      className="btn btn-second btn-wide site-btn"
+      onClick={() => {
+        haptic.tap()
+        void openUrl(url)
+      }}
+    >
+      <span className="col grow" style={{ textAlign: 'left' }}>
+        <span className="line">{label}</span>
+        <span className="t-num c3 line">{host}</span>
+      </span>
+      <ArrowUpRight size={18} className="none" />
+    </button>
   )
 }
 

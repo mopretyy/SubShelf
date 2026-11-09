@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChartColumn, List, Plus, User } from 'lucide-react'
 import { App as CapApp } from '@capacitor/app'
+import { LocalNotifications } from '@capacitor/local-notifications'
 import { StatusBar, Style } from '@capacitor/status-bar'
 import { popBack, useBack } from '@/lib/back'
 import { billing } from '@/lib/billing'
@@ -160,6 +161,20 @@ export function App() {
       void back.then((h) => h.remove())
     }
   }, [])
+  // Tapping a reminder opens that subscription, with the link to cancel it on the site.
+  useEffect(() => {
+    if (!isNative()) return
+    const tap = LocalNotifications.addListener('localNotificationActionPerformed', (e) => {
+      const id = Number((e.notification.extra as { subId?: unknown } | undefined)?.subId)
+      if (!Number.isInteger(id) || id <= 0) return
+      setTab('subs')
+      setPage('main')
+      setDetailId(id)
+    })
+    return () => {
+      void tap.then((h) => h.remove())
+    }
+  }, [])
   useBack(tab !== 'subs', () => setTab('subs'))
   useBack(tab === 'profile' && page === 'settings', () => setPage('main'))
 
@@ -260,6 +275,23 @@ export function App() {
     })
   }
 
+  /** An ended trial: it became a paid plan (charges roll on from the trial end) or was cancelled. */
+  const resolveTrial = (sub: Sub, kept: boolean) => {
+    haptic.tap()
+    if (kept) {
+      commit(subsRef.current.map((s) => (s.id === sub.id ? { ...s, status: 'active' } : s)))
+      notify(t('attnKeptToast', { name: sub.name }))
+      return
+    }
+    const day = sub.nextDate && sub.nextDate < today ? sub.nextDate : today
+    commit(subsRef.current.map((s) => (s.id === sub.id ? { ...s, archivedAt: day } : s)))
+    notify(t('movedToHistory', { name: sub.name }), {
+      label: t('undo'),
+      run: () =>
+        commit(subsRef.current.map((s) => (s.id === sub.id ? { ...s, archivedAt: null } : s))),
+    })
+  }
+
   const openEdit = (sub: Sub) => {
     setDetailId(null)
     setTimeout(() => setForm({ sub, restore: false }), 120)
@@ -326,6 +358,7 @@ export function App() {
                 onOpen={(s) => setDetailId(s.id)}
                 onLongPress={setActions}
                 onPro={() => openPaywall('limit')}
+                onResolveTrial={resolveTrial}
               />
             ) : tab === 'insights' ? (
               <Insights

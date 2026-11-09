@@ -16,9 +16,15 @@ SubShelf — трекер подписок и пробных периодов. �
 
 Нет регистрации, рекламы, аналитики, отслеживания между приложениями и сайтами, сбора отчётов о сбоях.
 
-## Поиск иконок
+## Поиск сайтов и иконок
 
-Если поиск иконок включён, приложение отправляет название сервиса в виде адреса сайта (например, `netflix.com`) в сервис значков Google (`www.google.com/s2/favicons`) и скачивает иконку. Цены, даты и заметки не отправляются. Google, как при любом запросе в интернет, видит IP-адрес устройства. Поиск иконок можно выключить в настройках приложения.
+Если поиск включён («Искать сайты и иконки» в настройках), приложение по введённому названию сервиса ищет его сайт и иконку:
+
+- отправляет название в открытую базу Wikidata (`www.wikidata.org`), чтобы найти официальный сайт;
+- отправляет возможные адреса сайта (например, `netflix.com`, `netflix.io`) в сервис значков Google (`t1.gstatic.com/faviconV2`) и скачивает иконку;
+- в приложении для телефона может открыть главную страницу найденного сайта, чтобы прочитать её название и отсеять домены, выставленные на продажу.
+
+Цены, даты и заметки не отправляются. Получатели, как при любом запросе в интернет, видят IP-адрес устройства. Поиск можно выключить в настройках приложения. Ссылка на сайт, которую вы сами вставили, хранится только на телефоне.
 
 ## Покупки
 
@@ -59,9 +65,15 @@ SubShelf is a tracker for subscriptions and free trials. We do not collect your 
 
 No sign-up, no ads, no analytics, no tracking across apps and websites, no crash reporting.
 
-## Icon lookup
+## Website and icon lookup
 
-When icon lookup is on, the app sends the service name as a website address (for example, `netflix.com`) to Google's favicon service (`www.google.com/s2/favicons`) to download its icon. Prices, dates and notes are never sent. As with any internet request, Google sees the device's IP address. You can turn icon lookup off in the app settings.
+When lookup is on ("Find websites and icons" in settings), the app looks up the website and icon for the service name you type:
+
+- it sends the name to the open Wikidata database (`www.wikidata.org`) to find the official website;
+- it sends likely website addresses (for example, `netflix.com`, `netflix.io`) to Google's favicon service (`t1.gstatic.com/faviconV2`) and downloads the icon;
+- in the phone app it may open the home page of a found site to read its title and skip domains that are for sale.
+
+Prices, dates and notes are never sent. As with any internet request, the recipients see the device's IP address. You can turn lookup off in the app settings. A website link you paste yourself is stored only on the phone.
 
 ## Purchases
 

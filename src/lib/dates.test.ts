@@ -22,6 +22,7 @@ const sub = (over: Partial<Sub>): Sub => ({
   remind: 1,
   category: 'other',
   icon: { kind: 'monogram' },
+  url: null,
   notes: null,
   archivedAt: null,
   createdAt: 0,

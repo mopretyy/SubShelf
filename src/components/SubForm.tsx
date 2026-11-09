@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronRight, StickyNote } from 'lucide-react'
-import { searchCatalog, norm, type CatalogEntry } from '@/lib/catalog'
+import { ChevronRight, Link2, StickyNote } from 'lucide-react'
+import {
+  catalogByDomain,
+  matchCatalog,
+  searchCatalog,
+  norm,
+  type CatalogEntry,
+} from '@/lib/catalog'
 import {
   CATEGORIES,
   fmtDate,
@@ -12,7 +18,8 @@ import {
   type Sub,
   type SubIcon,
 } from '@/lib/dates'
-import { resolveIcon } from '@/lib/icons'
+import { iconFromSite } from '@/lib/icons'
+import { brandFromDomain, findSites, parseSite, probeIcon, type SiteHit } from '@/lib/sites'
 import { useI18n, type Key } from '@/lib/i18n'
 import { haptic } from '@/lib/native'
 import { CURRENCIES } from '@/lib/store'
@@ -39,8 +46,14 @@ interface Draft {
   /** The person picked the category by hand: the name no longer changes it. */
   categoryPicked: boolean
   icon: SubIcon
+  /** Website typed or picked by hand ('' = none). */
+  url: string
+  /** The site/icon was chosen by hand or comes from a saved subscription: the name no longer changes it. */
+  sitePicked: boolean
   notes: string
 }
+
+type Site = NonNullable<ReturnType<typeof parseSite>>
 
 export const remindKey = (r: RemindDays, short = false): Key =>
   `${short ? 'remindShort' : 'remind'}${r === null ? 'Off' : r}` as Key
@@ -63,6 +76,8 @@ function draftFrom(
       category: 'other',
       categoryPicked: false,
       icon: { kind: 'monogram' },
+      url: '',
+      sitePicked: false,
       notes: '',
     }
   }
@@ -77,11 +92,14 @@ function draftFrom(
     category: s.category,
     categoryPicked: true,
     icon: s.icon,
+    url: s.url ?? '',
+    sitePicked: s.icon.kind !== 'monogram',
     notes: s.notes ?? '',
   }
 }
 
-type Picker = 'currency' | 'cycle' | 'remind' | 'date' | 'icon' | 'category' | null
+type Picker = 'currency' | 'cycle' | 'remind' | 'date' | 'icon' | 'category' | 'site' | null
+type Search = 'idle' | 'searching' | 'done'
 
 export function SubForm({
   open,
@@ -111,9 +129,14 @@ export function SubForm({
   const [error, setError] = useState<string | null>(null)
   const [picker, setPicker] = useState<Picker>(null)
   const [suggest, setSuggest] = useState<CatalogEntry[]>([])
-  const [searching, setSearching] = useState(false)
+  const [search, setSearch] = useState<Search>('idle')
+  const [sites, setSites] = useState<SiteHit[]>([])
+  const [typedLink, setTypedLink] = useState<Site | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
+  const [nonce, setNonce] = useState(0)
+  const pasted = useRef(false)
   const seq = useRef(0)
+  const searching = search === 'searching'
 
   useEffect(() => {
     if (!open) return
@@ -121,47 +144,78 @@ export function SubForm({
     setNoteOpen(Boolean(sub?.notes))
     setError(null)
     setSuggest([])
-    setSearching(false)
+    setSearch('idle')
+    setSites([])
+    setTypedLink(null)
     setPicker(null)
   }, [open, sub, defaultRemind, defaultCurrency, restore])
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((p) => ({ ...p, [k]: v }))
 
-  /** Icon follows the name: catalog instantly, online guess after a pause. */
+  /**
+   * The icon follows the name: the catalog answers instantly, then the web (official site, then
+   * name.com, name.io …) after a pause. A link in the name field is offered as the site.
+   */
   useEffect(() => {
     if (!open) return
     const q = d.name.trim()
     const my = ++seq.current
+    setSites([])
+    const link = parseSite(q)
+    setTypedLink(link)
+    if (link) {
+      setSuggest([])
+      setSearch('idle')
+      return
+    }
     const hits = searchCatalog(q, 3)
     const exact = hits.find((c) => norm(c.name) === norm(q) || c.aliases.includes(norm(q)))
     setSuggest(exact ? [] : hits)
     if (exact || hits.length === 1) {
       const c = exact ?? hits[0]
-      setD((p) => ({
-        ...p,
-        icon: p.icon.domain === c.domain ? p.icon : { kind: 'catalog', domain: c.domain },
-        category: p.categoryPicked ? p.category : c.category,
-      }))
-      setSearching(false)
+      setSearch('idle')
+      setD((p) =>
+        p.sitePicked
+          ? p
+          : {
+              ...p,
+              icon: p.icon.domain === c.domain ? p.icon : { kind: 'catalog', domain: c.domain },
+              category: p.categoryPicked ? p.category : c.category,
+            },
+      )
       return
     }
-    if (q.length < 2 || hits.length > 0 || !online) {
-      setSearching(false)
-      if (d.icon.kind !== 'monogram' && sub?.name !== d.name)
+    if (d.sitePicked || q.length < 2 || hits.length > 0 || !online) {
+      setSearch('idle')
+      if (!d.sitePicked && d.icon.kind !== 'monogram')
         setD((p) => ({ ...p, icon: { kind: 'monogram' } }))
       return
     }
-    setSearching(true)
+    setSearch('searching')
+    const ctrl = new AbortController()
     const tm = window.setTimeout(() => {
-      void resolveIcon(q, true).then((icon) => {
+      void findSites(q, 4, ctrl.signal).then((found) => {
         if (seq.current !== my) return
-        setSearching(false)
-        setD((p) => ({ ...p, icon }))
+        setSites(found)
+        setSearch('done')
+        setD((p) => {
+          if (p.sitePicked) return p
+          const top = found[0]
+          const guess = top ? (catalogByDomain(top.domain)?.category ?? top.category) : undefined
+          return {
+            ...p,
+            icon: top ? iconFromSite(top) : { kind: 'monogram' },
+            category: p.categoryPicked || !guess ? p.category : guess,
+          }
+        })
       })
-    }, 450)
-    return () => window.clearTimeout(tm)
+    }, 500)
+    return () => {
+      window.clearTimeout(tm)
+      ctrl.abort()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [d.name, open, online])
+  }, [d.name, open, online, nonce])
 
   const pick = (c: CatalogEntry) => {
     haptic.select()
@@ -174,8 +228,67 @@ export function SubForm({
     setSuggest([])
   }
 
+  /** A site chosen by hand: its icon, its link, and the service name when the field is empty or a link. */
+  const applySite = (site: Site, renameFrom?: string) => {
+    haptic.select()
+    const entry = catalogByDomain(site.domain) ?? matchCatalog(brandFromDomain(site.domain))
+    setD((p) => {
+      const rename = !p.name.trim() || parseSite(p.name) || renameFrom !== undefined
+      return {
+        ...p,
+        name: rename ? (entry?.name ?? brandFromDomain(site.domain)) : p.name,
+        url: site.url,
+        sitePicked: true,
+        icon: entry
+          ? { kind: 'catalog', domain: entry.domain }
+          : { kind: 'remote', domain: site.domain },
+        category: p.categoryPicked || !entry ? p.category : entry.category,
+      }
+    })
+    setSites([])
+    setSuggest([])
+    if (!online) return
+    setSearch('searching')
+    void probeIcon(site.domain).then((res) => {
+      setSearch('idle')
+      setD((p) =>
+        p.icon.domain !== site.domain && !entry
+          ? p
+          : res.ok
+            ? { ...p, icon: { ...p.icon, data: res.data } }
+            : entry
+              ? p
+              : { ...p, icon: { kind: 'monogram' } },
+      )
+    })
+  }
+
+  const pickHit = (hit: SiteHit) => {
+    haptic.select()
+    const guess = catalogByDomain(hit.domain)?.category ?? hit.category
+    setD((p) => ({
+      ...p,
+      icon: iconFromSite(hit),
+      url: p.url || `https://${hit.domain}`,
+      sitePicked: true,
+      category: p.categoryPicked || !guess ? p.category : guess,
+    }))
+  }
+
+  /** Look again from scratch: forget the hand-picked site. */
+  const research = () => {
+    setD((p) => ({ ...p, sitePicked: false, icon: { kind: 'monogram' } }))
+    setNonce((n) => n + 1)
+  }
+
   const submit = () => {
-    const name = d.name.trim()
+    let name = d.name.trim()
+    let url = d.url.trim()
+    const link = parseSite(name)
+    if (link) {
+      name = catalogByDomain(link.domain)?.name ?? brandFromDomain(link.domain)
+      url = url || link.url
+    }
     if (!name) {
       haptic.warn()
       return setError(t('errName'))
@@ -196,10 +309,13 @@ export function SubForm({
       nextDate: d.nextDate,
       remind: d.remind,
       category: d.category,
-      icon: d.icon,
+      icon: link && d.icon.kind === 'monogram' ? { kind: 'remote', domain: link.domain } : d.icon,
+      url: url ? url.slice(0, 400) : null,
       notes: d.notes.trim() ? d.notes.trim().slice(0, 500) : null,
     })
   }
+
+  const siteDomain = parseSite(d.url)?.domain ?? (d.icon.kind !== 'monogram' ? d.icon.domain : null)
 
   const trial = d.status === 'trial'
   const dateValues = d.nextDate
@@ -249,20 +365,43 @@ export function SubForm({
               ref={nameRef}
               className="name-input"
               value={d.name}
-              placeholder={t('fName')}
+              placeholder={t('fNamePh')}
               aria-label={t('fName')}
-              maxLength={80}
+              maxLength={400}
               autoComplete="off"
               autoCapitalize="words"
               enterKeyHint="done"
+              onPaste={() => {
+                pasted.current = true
+              }}
               onChange={(e) => {
-                set('name', e.target.value)
+                const value = e.target.value
+                const link = pasted.current ? parseSite(value) : null
+                pasted.current = false
                 setError(null)
+                if (link) applySite(link, value)
+                else set('name', value)
               }}
             />
           </div>
 
-          {suggest.length > 0 ? (
+          {typedLink ? (
+            <div className="group sugg">
+              <button type="button" className="row row-sugg" onClick={() => applySite(typedLink)}>
+                <ServiceIcon
+                  name={brandFromDomain(typedLink.domain)}
+                  icon={{ kind: 'remote', domain: typedLink.domain }}
+                  size={32}
+                  online={online}
+                />
+                <span className="col grow">
+                  <span className="t-body line">{brandFromDomain(typedLink.domain)}</span>
+                  <span className="t-num c3 line">{typedLink.domain}</span>
+                </span>
+                <span className="btn btn-second btn-sm none">{t('done')}</span>
+              </button>
+            </div>
+          ) : suggest.length > 0 ? (
             <div className="group sugg">
               {suggest.map((c) => (
                 <button key={c.name} type="button" className="row row-sugg" onClick={() => pick(c)}>
@@ -274,13 +413,39 @@ export function SubForm({
                   />
                   <span className="col grow">
                     <span className="t-body line">{c.name}</span>
-                    <span className="t-cap c3 line">{c.domain}</span>
+                    <span className="t-num c3 line">{c.domain}</span>
                   </span>
                 </button>
               ))}
             </div>
           ) : searching ? (
             <div className="t-sub c3 line sugg-note">{t('searching')}</div>
+          ) : search === 'done' && sites.length > 0 ? (
+            <div className="site-pick">
+              <span className="t-mono c3 line">{t('siteFound')}</span>
+              <div className="site-chips">
+                {sites.map((h) => (
+                  <button
+                    key={h.domain}
+                    type="button"
+                    className={cn('site-chip', d.icon.domain === h.domain && 'is-on')}
+                    onClick={() => pickHit(h)}
+                    title={h.title}
+                  >
+                    <ServiceIcon name={h.domain} icon={iconFromSite(h)} size={26} online={online} />
+                    <span className="t-num line">{h.domain}</span>
+                  </button>
+                ))}
+                <button type="button" className="site-chip" onClick={() => setPicker('site')}>
+                  <Link2 size={16} className="c2" />
+                  <span className="t-sub line">{t('siteOther')}</span>
+                </button>
+              </div>
+            </div>
+          ) : search === 'done' ? (
+            <button type="button" className="sugg-note link-row" onClick={() => setPicker('site')}>
+              <span className="t-sub c2 line">{t('siteNone')}</span>
+            </button>
           ) : null}
 
           <Segmented<Status>
@@ -330,6 +495,11 @@ export function SubForm({
               label={t('fCategory')}
               values={[t(`cat${d.category}` as Key)]}
               onClick={() => setPicker('category')}
+            />
+            <FormRow
+              label={t('fSite')}
+              values={[siteDomain ?? t('siteAdd')]}
+              onClick={() => setPicker('site')}
             />
           </div>
 
@@ -406,19 +576,23 @@ export function SubForm({
         title={t('iconTitle')}
         options={[
           { value: 'retry', label: t('iconRetry') },
+          { value: 'site', label: t('iconSite') },
           { value: 'letter', label: t('iconLetter') },
         ]}
         value={undefined}
         onPick={(v) => {
-          if (v === 'letter') set('icon', { kind: 'monogram' })
-          else {
-            setSearching(true)
-            void resolveIcon(d.name, online).then((icon) => {
-              setSearching(false)
-              set('icon', icon)
-            })
-          }
+          if (v === 'letter') setD((p) => ({ ...p, icon: { kind: 'monogram' }, sitePicked: true }))
+          else if (v === 'site') setTimeout(() => setPicker('site'), 300)
+          else research()
         }}
+        onClose={() => setPicker(null)}
+      />
+      <SiteSheet
+        open={picker === 'site'}
+        value={d.url || siteDomain || ''}
+        canClear={Boolean(d.url)}
+        onSave={(site) => applySite(site)}
+        onClear={() => setD((p) => ({ ...p, url: '' }))}
         onClose={() => setPicker(null)}
       />
       <CalendarSheet
@@ -430,6 +604,98 @@ export function SubForm({
         onClose={() => setPicker(null)}
       />
     </>
+  )
+}
+
+/** Type or paste the service address; the icon and (for an empty name) the name follow it. */
+function SiteSheet({
+  open,
+  value,
+  canClear,
+  onSave,
+  onClear,
+  onClose,
+}: {
+  open: boolean
+  value: string
+  canClear: boolean
+  onSave: (site: Site) => void
+  onClear: () => void
+  onClose: () => void
+}) {
+  const { t } = useI18n()
+  const [v, setV] = useState(value)
+  const [err, setErr] = useState(false)
+  const ref = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (open) {
+      setV(value)
+      setErr(false)
+    }
+  }, [open, value])
+  const save = () => {
+    const site = parseSite(v)
+    if (!site) {
+      haptic.warn()
+      return setErr(true)
+    }
+    onSave(site)
+    onClose()
+  }
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      label={t('siteTitle')}
+      onOpened={() => ref.current?.focus()}
+    >
+      <div className="sheet-head">
+        <span className="t-head line grow">{t('siteTitle')}</span>
+      </div>
+      <div className="sheet-body">
+        <input
+          ref={ref}
+          className="field field-mono"
+          value={v}
+          placeholder={t('sitePh')}
+          aria-label={t('fSite')}
+          inputMode="url"
+          autoCapitalize="none"
+          autoCorrect="off"
+          autoComplete="url"
+          spellCheck={false}
+          enterKeyHint="done"
+          onChange={(e) => {
+            setV(e.target.value)
+            setErr(false)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') save()
+          }}
+        />
+        {err ? <div className="err t-sub line">{t('siteBad')}</div> : null}
+        <p className="t-sub c3 multi" style={{ padding: '10px 4px 0' }}>
+          {t('siteHint')}
+        </p>
+      </div>
+      <div className="sheet-foot row-gap">
+        {canClear ? (
+          <button
+            type="button"
+            className="btn btn-second none"
+            onClick={() => {
+              onClear()
+              onClose()
+            }}
+          >
+            {t('siteClear')}
+          </button>
+        ) : null}
+        <button type="button" className="btn btn-primary grow" onClick={save}>
+          {t('done')}
+        </button>
+      </div>
+    </Sheet>
   )
 }
 

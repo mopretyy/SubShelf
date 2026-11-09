@@ -1,5 +1,6 @@
 import { Preferences } from '@capacitor/preferences'
 import { matchCatalog } from './catalog'
+import { isDomain } from './sites'
 import {
   CATEGORIES,
   isValidYmd,
@@ -114,10 +115,7 @@ function sanitizeIcon(raw: unknown, name: string): SubIcon {
   if (raw && typeof raw === 'object') {
     const r = raw as Record<string, unknown>
     const kind = r.kind === 'catalog' || r.kind === 'remote' ? r.kind : 'monogram'
-    const domain =
-      typeof r.domain === 'string' && /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(r.domain)
-        ? r.domain
-        : undefined
+    const domain = typeof r.domain === 'string' && isDomain(r.domain) ? r.domain : undefined
     const data =
       typeof r.data === 'string' && r.data.startsWith('data:image/') && r.data.length < 60_000
         ? r.data
@@ -145,11 +143,16 @@ export function sanitizeSub(raw: unknown, fallbackId: number, today = localYmd()
   const archivedAt =
     date(r.archivedAt) ?? (r.status === 'cancelled' ? (date(r.cancelledAt) ?? today) : null)
 
-  let notes = typeof r.notes === 'string' && r.notes.trim() ? r.notes.trim() : ''
-  const cancelUrl = typeof r.cancelUrl === 'string' ? r.cancelUrl.trim() : ''
-  if (cancelUrl && !notes.includes(cancelUrl)) {
-    notes = notes ? `${notes}\nСсылка для отмены: ${cancelUrl}` : `Ссылка для отмены: ${cancelUrl}`
+  // v1 kept a cancel link; v2 first parked it in the notes. Both now live in `url`.
+  const link = (v: unknown) => {
+    if (typeof v !== 'string') return null
+    const t = v.trim()
+    return /^https?:\/\/[^\s]+$/i.test(t) && t.length <= 400 ? t : null
   }
+  let notes = typeof r.notes === 'string' && r.notes.trim() ? r.notes.trim() : ''
+  const parked = /(?:^|\n)Ссылка для отмены: (https?:\/\/\S+)\s*$/.exec(notes)
+  const url = link(r.url) ?? link(r.cancelUrl) ?? (parked ? link(parked[1]) : null)
+  if (parked && url === link(parked[1])) notes = notes.slice(0, parked.index).trim()
 
   const remind: RemindDays =
     'remind' in r && REMIND_OPTIONS.includes(r.remind as RemindDays) ? (r.remind as RemindDays) : 1
@@ -168,6 +171,7 @@ export function sanitizeSub(raw: unknown, fallbackId: number, today = localYmd()
     remind,
     category,
     icon: sanitizeIcon(r.icon, name),
+    url,
     notes: notes ? notes.slice(0, 600) : null,
     archivedAt,
     createdAt: typeof r.createdAt === 'number' ? r.createdAt : Date.now(),
@@ -294,7 +298,18 @@ export function exportCsv(subs: Sub[]): string {
     'notes',
   ]
   const rows = subs.map((s) =>
-    [s.name, s.status, s.price, s.currency, s.cycle, s.nextDate, s.category, s.archivedAt, s.notes]
+    [
+      s.name,
+      s.status,
+      s.price,
+      s.currency,
+      s.cycle,
+      s.nextDate,
+      s.category,
+      s.url,
+      s.archivedAt,
+      s.notes,
+    ]
       .map(cell)
       .join(';'),
   )

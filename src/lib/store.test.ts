@@ -4,7 +4,6 @@ vi.mock('@capacitor/preferences', () => ({ Preferences: { get: vi.fn(), set: vi.
 
 const { importJson, sanitizeList, sanitizeSettings, sanitizeSub } = await import('./store')
 const { matchCatalog, searchCatalog } = await import('./catalog')
-const { guessDomains } = await import('./icons')
 
 const TODAY = '2026-10-09'
 
@@ -35,11 +34,19 @@ describe('v1 → v2 migration', () => {
     expect(b.archivedAt).toBe(TODAY)
   })
 
-  it('keeps an old cancel link inside the notes', () => {
+  it('moves an old cancel link into the website field', () => {
     const s = sanitizeSub({ name: 'X', notes: 'Семейный', cancelUrl: 'https://x.com/c' }, 1, TODAY)!
-    expect(s.notes).toBe('Семейный\nСсылка для отмены: https://x.com/c')
-    const t = sanitizeSub({ name: 'Y', cancelUrl: 'https://y.com' }, 1, TODAY)!
-    expect(t.notes).toBe('Ссылка для отмены: https://y.com')
+    expect(s.url).toBe('https://x.com/c')
+    expect(s.notes).toBe('Семейный')
+    // v2 parked it at the end of the notes: take it out of there too.
+    const t = sanitizeSub(
+      { name: 'Y', notes: 'Семейный\nСсылка для отмены: https://y.com/cancel' },
+      1,
+      TODAY,
+    )!
+    expect(t.url).toBe('https://y.com/cancel')
+    expect(t.notes).toBe('Семейный')
+    expect(sanitizeSub({ name: 'Z', url: 'javascript:alert(1)' }, 1, TODAY)!.url).toBeNull()
   })
 
   it('picks a catalog icon for known names without network', () => {
@@ -104,15 +111,5 @@ describe('icons', () => {
     expect(matchCatalog('Aqua Voice')?.domain).toBe('aquavoice.com')
     expect(searchCatalog('spo')[0]?.name).toBe('Spotify Premium')
     expect(matchCatalog('x')).toBeNull()
-  })
-
-  it('guesses domains for unknown services', () => {
-    expect(guessDomains('Super Tool+')).toEqual([
-      'supertoolplus.com',
-      'supertoolplus.ai',
-      'supertoolplus.app',
-      'supertoolplus.io',
-    ])
-    expect(guessDomains('Кинозал')).toEqual([])
   })
 })

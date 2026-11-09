@@ -22,6 +22,7 @@ const RAW: [string, string, Category, string[]][] = [
   ['Midjourney', 'midjourney.com', 'ai', ['mj']],
   ['Aqua Voice', 'aquavoice.com', 'ai', ['aqua']],
   ['Hoplite', 'hoplite.sh', 'ai', ['хоплит']],
+  ['Tembo', 'tembo.io', 'ai', ['тембо']],
   ['Notion Plus', 'notion.so', 'work', ['notion', 'ноушн']],
   ['Figma Professional', 'figma.com', 'work', ['figma', 'фигма']],
   ['Canva Pro', 'canva.com', 'work', ['canva', 'канва']],
@@ -118,6 +119,59 @@ export const CATALOG: CatalogEntry[] = RAW.map(([name, domain, category, aliases
   category,
   aliases,
 }))
+
+const APPLE = 'https://apps.apple.com/account/subscriptions'
+const MICROSOFT = 'https://account.microsoft.com/services'
+
+/** Where to change or cancel the plan of a popular service (the home page is the fallback). */
+const MANAGE: Record<string, string> = {
+  Netflix: 'https://www.netflix.com/cancelplan',
+  'Spotify Premium': 'https://www.spotify.com/account/subscription/',
+  'YouTube Premium': 'https://www.youtube.com/paid_memberships',
+  'YouTube Music': 'https://www.youtube.com/paid_memberships',
+  'ChatGPT Plus': 'https://chatgpt.com/#settings/Subscription',
+  'Claude Pro': 'https://claude.ai/settings/billing',
+  'Gemini Advanced': 'https://one.google.com/settings',
+  'Google One': 'https://one.google.com/settings',
+  'GitHub Copilot': 'https://github.com/settings/billing',
+  Midjourney: 'https://www.midjourney.com/account',
+  'Canva Pro': 'https://www.canva.com/settings/billing-and-plans',
+  'Adobe Creative Cloud': 'https://account.adobe.com/plans',
+  'Dropbox Plus': 'https://www.dropbox.com/account/plan',
+  'iCloud+': APPLE,
+  'Apple Music': APPLE,
+  'Apple TV+': APPLE,
+  'Apple One': APPLE,
+  'Apple Fitness+': APPLE,
+  'Disney+': 'https://www.disneyplus.com/account',
+  'Prime Video': 'https://www.amazon.com/mc',
+  'Amazon Prime': 'https://www.amazon.com/mc',
+  'Kindle Unlimited': 'https://www.amazon.com/kindle-dbs/ku/ku-central',
+  'Twitch Turbo': 'https://www.twitch.tv/turbo',
+  'Xbox Game Pass': MICROSOFT,
+  'Microsoft 365': MICROSOFT,
+  'Microsoft Copilot Pro': MICROSOFT,
+  'Coursera Plus': 'https://www.coursera.org/my-purchases',
+  Patreon: 'https://www.patreon.com/settings/memberships',
+  Zoom: 'https://zoom.us/billing',
+  Grammarly: 'https://account.grammarly.com/subscription',
+  Crunchyroll: 'https://www.crunchyroll.com/account/membership',
+  Proton: 'https://account.proton.me/dashboard',
+  JetBrains: 'https://account.jetbrains.com/licenses',
+  Strava: 'https://www.strava.com/account',
+  ElevenLabs: 'https://elevenlabs.io/app/subscription',
+  'Google Play Pass': 'https://play.google.com/store/account/subscriptions',
+}
+
+export function catalogByDomain(domain: string): CatalogEntry | null {
+  return CATALOG.find((c) => c.domain === domain) ?? null
+}
+
+/** Direct page to manage or cancel a known service, found by name first, then by site. */
+export function manageLink(name: string, domain?: string): string | null {
+  const entry = matchCatalog(name) ?? (domain ? catalogByDomain(domain) : null)
+  return entry ? (MANAGE[entry.name] ?? null) : null
+}
 
 export const norm = (s: string) => s.toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim()
 

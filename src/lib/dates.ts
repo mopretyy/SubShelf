@@ -42,6 +42,8 @@ export interface Sub {
   remind: RemindDays
   category: Category
   icon: SubIcon
+  /** Website or the page where the plan is managed; null = use the icon's site. */
+  url: string | null
   notes: string | null
   /** Set when the subscription was cancelled: from then on it lives in the history. */
   archivedAt: string | null

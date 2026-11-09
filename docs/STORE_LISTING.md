@@ -52,13 +52,14 @@ SubShelf помнит обо всех ваших подписках и проб�
 • Пробные и активные подписки отдельно, у каждой цена, валюта и период.
 • Сумма в месяц и ближайшее списание на главном экране.
 • Напоминания до списания в удобное время.
-• Иконки сервисов подбираются сами по названию.
+• Вставьте ссылку или введите название: сайт и иконка найдутся сами.
+• Кнопка «Отменить на сайте» ведёт прямо на страницу отмены Netflix, Spotify, YouTube и других.
 • История отменённых подписок и сколько вы экономите.
 • Резервная копия в файл и восстановление.
 • Работает без интернета.
 
 ПРИВАТНОСТЬ
-Без регистрации, рекламы и аналитики. Все данные хранятся только на телефоне. Для поиска иконки в интернет уходит только название сервиса, и это можно выключить.
+Без регистрации, рекламы и аналитики. Все данные хранятся только на телефоне. Для поиска сайта и иконки в интернет уходит только название сервиса, и это можно выключить.
 
 SUBSHELF PRO
 • Безлимит подписок (в бесплатной версии до 5).
@@ -121,13 +122,14 @@ FEATURES
 • Trials and active subscriptions kept apart, each with its price, currency and billing period.
 • Monthly total and the next charge on the home screen.
 • Reminders before each charge at the time you choose.
-• Service icons picked automatically from the name.
+• Paste a link or type a name: the website and icon are found for you.
+• A “Cancel on the website” button opens the cancel page of Netflix, Spotify, YouTube and more.
 • History of cancelled subscriptions and how much you save.
 • Backup to a file and restore.
 • Works offline.
 
 PRIVACY
-No sign-up, no ads, no analytics. All data stays on your phone. To find an icon, only the service name goes online, and you can turn that off.
+No sign-up, no ads, no analytics. All data stays on your phone. To find the website and icon, only the service name goes online, and you can turn that off.
 
 SUBSHELF PRO
 • Unlimited subscriptions (up to 5 on the free plan).
@@ -168,7 +170,7 @@ First store release: a new light design, SubShelf Pro with statistics and a char
 | Идентификаторы устройства и другие ID                                                             | Собирается (анонимный ID RevenueCat), не передаётся, обязательна, цель «Функциональность приложения» |
 | Всё остальное (местоположение, контакты, фото, сообщения, здоровье, файлы, действия в приложении) | Не собирается                                                                                        |
 
-Подписки, цены и заметки пользователя остаются на телефоне и не собираются. Запрос иконки (название сервиса как адрес сайта) обрабатывается сразу и нигде не хранится, поэтому по правилам Google его можно не указывать. Если хотите перестраховаться, отметьте «Действия в приложении → Другой пользовательский контент: передаётся, необязательно, функциональность приложения».
+Подписки, цены и заметки пользователя остаются на телефоне и не собираются. Поиск сайта и иконки (название сервиса уходит в Wikidata и сервис значков Google) обрабатывается сразу и нигде не хранится, поэтому по правилам Google его можно не указывать. Если хотите перестраховаться, отметьте «Действия в приложении → Другой пользовательский контент: передаётся, необязательно, функциональность приложения».
 
 ## Конфиденциальность в App Store (App Privacy)
 
@@ -177,7 +179,7 @@ First store release: a new light design, SubShelf Pro with statistics and a char
 | Покупки → История покупок | Собирается, цель «Функциональность приложения», не связана с личностью, не для отслеживания |
 | Всё остальное             | Не собирается                                                                               |
 
-Отслеживание (App Tracking Transparency): **не используется**. Запрос иконки выполняется в реальном времени и не хранится, по определению Apple это не сбор данных.
+Отслеживание (App Tracking Transparency): **не используется**. Поиск сайта и иконки выполняется в реальном времени и не хранится, по определению Apple это не сбор данных.
 
 ## Заметки для проверяющих (App Review / Google Play)
 

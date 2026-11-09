@@ -1,6 +1,14 @@
 import { ArrowUpRight, Plus } from 'lucide-react'
 import { FREE_LIMIT } from '@/lib/config'
-import { fmtMoney, mainCurrency, monthlyByCurrency, round2, type Next, type Sub } from '@/lib/dates'
+import {
+  fmtDate,
+  fmtMoney,
+  mainCurrency,
+  monthlyByCurrency,
+  round2,
+  type Next,
+  type Sub,
+} from '@/lib/dates'
 import { useI18n } from '@/lib/i18n'
 import type { Pro } from '@/lib/pro'
 import { cn } from '@/lib/cn'
@@ -37,6 +45,7 @@ export function Home({
   onOpen,
   onLongPress,
   onPro,
+  onResolveTrial,
 }: {
   items: Item[]
   loading: boolean
@@ -48,6 +57,8 @@ export function Home({
   onOpen: (s: Sub) => void
   onLongPress: (s: Sub) => void
   onPro: () => void
+  /** An ended trial: kept = it turned into a paid plan, otherwise it was cancelled. */
+  onResolveTrial: (s: Sub, kept: boolean) => void
 }) {
   const i18n = useI18n()
   const { t, locale } = i18n
@@ -126,8 +137,13 @@ export function Home({
     .filter((i) => i.next && !i.next.overdue)
     .sort((a, b) => (a.next!.date < b.next!.date ? -1 : 1))[0]
 
+  // Trials past their end date need one answer instead of a red "overdue" pill.
+  const ended = items.filter((i) => i.s.status === 'trial' && i.next?.overdue)
   const sections: { title: string; list: Item[] }[] = [
-    { title: t('trials'), list: items.filter((i) => i.s.status === 'trial') },
+    {
+      title: t('trials'),
+      list: items.filter((i) => i.s.status === 'trial' && !i.next?.overdue),
+    },
     { title: t('actives'), list: items.filter((i) => i.s.status === 'active') },
   ]
 
@@ -202,6 +218,36 @@ export function Home({
           <span className="btn btn-primary btn-sm none">{t('limitCta')}</span>
         </button>
       ) : null}
+
+      {ended.map(({ s }) => (
+        <div key={s.id} className="card attn">
+          <button type="button" className="attn-head" onClick={() => onOpen(s)}>
+            <ServiceIcon name={s.name} icon={s.icon} size={42} online={online} />
+            <span className="col grow">
+              <span className="t-head multi">
+                {t('attnTitle', { name: s.name, date: fmtDate(s.nextDate!, locale, true) })}
+              </span>
+              <span className="t-sub c2 line">{t('attnText')}</span>
+            </span>
+          </button>
+          <div className="row-gap">
+            <button
+              type="button"
+              className="btn btn-second btn-sm grow"
+              onClick={() => onResolveTrial(s, false)}
+            >
+              {t('attnCancelled')}
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm grow"
+              onClick={() => onResolveTrial(s, true)}
+            >
+              {t('attnKept')}
+            </button>
+          </div>
+        </div>
+      ))}
 
       {sections.map((sec) =>
         sec.list.length ? (
