@@ -134,6 +134,19 @@ export function fmtDate(ymd: string, locale: string, long = false): string {
   }).format(parseYmd(ymd))
 }
 
+/** "9 ноября", or "9 ноября 2027" when the year is not the current one. */
+export function fmtDay(ymd: string, locale: string, today: string): string {
+  const sameYear = ymd.slice(0, 4) === today.slice(0, 4)
+  return new Intl.DateTimeFormat(locale, {
+    day: 'numeric',
+    month: 'long',
+    year: sameYear ? undefined : 'numeric',
+    timeZone: 'UTC',
+  })
+    .format(parseYmd(ymd))
+    .replace(/\s?г\.$/, '')
+}
+
 export function fmtMonthYear(ymd: string, locale: string): string {
   const s = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' })
     .format(parseYmd(ymd))

@@ -291,7 +291,7 @@ const ru = {
   obStart: 'Начать',
   obSkip: 'Пропустить',
   obSampleNotif: 'Пробное Claude Pro: конец завтра',
-  obSampleNotifBody: '12 ноября спишут $20. Отмените, если не нужно.',
+  obSampleNotifBody: '{date} спишут {price}. Отмените, если не нужно.',
 
   channelName: 'Списания',
   nTrialTitle: 'Пробное {name}: конец {when}',
@@ -594,7 +594,7 @@ const en: Record<Key, string> = {
   obStart: 'Get started',
   obSkip: 'Skip',
   obSampleNotif: 'Claude Pro trial ends tomorrow',
-  obSampleNotifBody: 'Nov 12: $20. Cancel it if you do not need it.',
+  obSampleNotifBody: '{date}: {price}. Cancel it if you do not need it.',
 
   channelName: 'Charges',
   nTrialTitle: 'Trial {name} ends {when}',

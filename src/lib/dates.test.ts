@@ -87,3 +87,12 @@ describe('dates', () => {
     ).toBe('RUB')
   })
 })
+
+describe('fmtDay', () => {
+  it('adds the year only when it is not the current one', async () => {
+    const { fmtDay } = await import('./dates')
+    expect(fmtDay('2026-11-09', 'ru-RU', '2026-01-01')).toBe('9 ноября')
+    expect(fmtDay('2027-11-09', 'ru-RU', '2026-01-01')).toBe('9 ноября 2027')
+    expect(fmtDay('2027-11-09', 'en-US', '2026-01-01')).toBe('November 9, 2027')
+  })
+})

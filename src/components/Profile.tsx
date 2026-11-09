@@ -1,6 +1,7 @@
 import { ChevronRight, Settings2 } from 'lucide-react'
 import {
   fmtDate,
+  fmtDay,
   fmtMoney,
   fmtMonthYear,
   mainCurrency,
@@ -73,10 +74,10 @@ export function Profile({
     if (pro.source === 'founder') return t('proFounder')
     if (pro.source === 'demo') return t('proDemo')
     if (pro.source === 'license') {
-      return pro.until ? t('proEnds', { date: fmtDate(pro.until, locale, true) }) : t('proLicense')
+      return pro.until ? t('proEnds', { date: fmtDay(pro.until, locale, today) }) : t('proLicense')
     }
     if (pro.until) {
-      const date = fmtDate(pro.until, locale, true)
+      const date = fmtDay(pro.until, locale, today)
       if (pro.trial) return t('proTrialEnds', { date })
       return pro.willRenew ? t('proRenews', { date }) : t('proEnds', { date })
     }

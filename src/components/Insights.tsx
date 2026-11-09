@@ -143,7 +143,7 @@ export function Insights({
         </>
       ) : (
         <div className="lock-wrap">
-          <div className="blurred" aria-hidden="true">
+          <div className="blurred" aria-hidden="true" inert>
             <div className="card summary">
               <Chart buckets={buckets} sel={0} onSel={() => {}} currency={cur} />
             </div>

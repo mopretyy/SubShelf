@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { BellRing, Check, ShieldCheck } from 'lucide-react'
+import { addDays, fmtDate, fmtMoney } from '@/lib/dates'
 import { useI18n, type Key } from '@/lib/i18n'
 import { haptic } from '@/lib/native'
 import { notifState, requestNotifs } from '@/lib/notify'
@@ -17,7 +18,7 @@ export function Onboarding({
   today: string
   onDone: () => void
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const [step, setStep] = useState(0)
   const [notif, setNotif] = useState<'idle' | 'on' | 'off'>('idle')
 
@@ -53,7 +54,12 @@ export function Onboarding({
               <span className="t-num c3 none">10:00</span>
             </span>
             <span className="t-head multi">{t('obSampleNotif')}</span>
-            <span className="t-sub c2 multi">{t('obSampleNotifBody')}</span>
+            <span className="t-sub c2 multi">
+              {t('obSampleNotifBody', {
+                date: fmtDate(addDays(today, 1), locale, true),
+                price: fmtMoney(20, 'USD', locale),
+              })}
+            </span>
           </span>
         </div>
       ),
